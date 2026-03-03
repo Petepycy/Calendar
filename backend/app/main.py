@@ -10,6 +10,7 @@ from pyrogram import Client
 from sqlalchemy import select
 
 from app.api.auth import router as auth_router
+from app.api.calendar_ics import router as calendar_ics_router
 from app.api.chat import router as chat_router
 from app.api.escalations import router as escalations_router
 from app.api.knowledge import router as knowledge_router
@@ -133,6 +134,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(calendar_ics_router)
 app.include_router(chat_router, prefix="/api")
 app.include_router(escalations_router)
 app.include_router(knowledge_router)
