@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Environment variables
+.env
+*.env.local
+*.env.*.local
+
+# Alembic
+# (keep migrations, exclude pycache above)
+
+# Pyrogram session files
+*.session
+*.session-journal
+
+# Logs
+logs/
+*.log
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# PIDs / runtime
+.pids/
+*.pid
+
+# Claude internal
+.claude/
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/

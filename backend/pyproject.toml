@@ -1,0 +1,37 @@
+[project]
+name = "calendar-agent"
+version = "0.1.0"
+description = "AI Booking Agent with LangGraph HITL workflow"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.2.20",
+    "langgraph-checkpoint-postgres>=1.0.0",
+    "langchain-google-genai>=2.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "psycopg[binary,pool]>=3.1.0",
+    "pyrogram>=2.0.0",
+    "tgcrypto>=1.2.0",
+    "pydantic-settings>=2.0.0",
+    "alembic>=1.13.0",
+    "authlib>=1.3.0",
+    "python-jose[cryptography]>=3.3.0",
+    "httpx>=0.27.0",
+    "aiosmtplib>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
