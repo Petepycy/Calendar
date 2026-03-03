@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { AuthProvider } from "@/lib/auth";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import DashboardLayout from "@/layouts/DashboardLayout";
+import LandingPage from "@/pages/LandingPage";
 import PublicCalendarPage from "@/pages/PublicCalendarPage";
 import CalendarPage from "@/pages/CalendarPage";
 import AgentPlaygroundPage from "@/pages/AgentPlaygroundPage";
@@ -25,7 +26,8 @@ export default function App() {
           <Toaster richColors position="top-right" />
           <Routes>
             {/* Public routes — no auth required */}
-            <Route path="/" element={<PublicCalendarPage />} />
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/calendar" element={<PublicCalendarPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
 

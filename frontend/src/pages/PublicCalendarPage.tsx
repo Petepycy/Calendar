@@ -61,7 +61,7 @@ export default function PublicCalendarPage() {
     e.preventDefault();
     const slug = slugInput.trim().toLowerCase();
     setActiveSlug(slug);
-    if (slug) navigate(`/?slug=${slug}`, { replace: true });
+    if (slug) navigate(`/calendar?slug=${slug}`, { replace: true });
   };
 
   const handleChatSend = async () => {
