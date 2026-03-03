@@ -15,7 +15,12 @@ from app.services.booking import BookingService
 from app.services.escalation_rules import check_escalation_rules
 from app.services.exceptions import SlotUnavailableException
 from app.services.tools import cancel_booking as cancel_booking_tool
-from app.services.tools import check_availability, escalate_to_human, prepare_booking
+from app.services.tools import (
+    check_availability,
+    escalate_to_human,
+    prepare_booking,
+    send_email as send_email_tool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +96,7 @@ def _system_prompt(
             "i ustalać szczegóły (sala, termin). Gdy użytkownik potwierdzi chęć rezerwacji "
             "wywołaj prepare_booking — system automatycznie poprosi o zalogowanie się przed "
             "finalizacją. NIE informuj samodzielnie o potrzebie logowania na etapie planowania.\n"
+            "9. Narzędzie send_email NIE jest dostępne dla niezalogowanych użytkowników.\n"
         )
     elif is_external_channel:
         booking_note = (
@@ -98,9 +104,19 @@ def _system_prompt(
             "Możesz ustalać szczegóły rezerwacji. Gdy użytkownik potwierdzi — "
             "wywołaj prepare_booking. Rezerwacja zostanie automatycznie przesłana "
             "do administratora do zatwierdzenia.\n"
+            "9. Narzędzie send_email NIE jest dostępne dla użytkowników kanałów zewnętrznych.\n"
         )
     else:
-        booking_note = ""
+        booking_note = (
+            "8. Możesz wysyłać emaile do zalogowanego użytkownika narzędziem send_email.\n"
+            '   Ustaw to="user" aby wysłać do aktualnie zalogowanego użytkownika.\n'
+            "   Kiedy używać send_email:\n"
+            "   - Po pomyślnym zatwierdzeniu rezerwacji — wyślij potwierdzenie z detalami.\n"
+            "   - Gdy użytkownik wyraźnie poprosi o email z informacją.\n"
+            "   - Gdy uznasz, że ważna informacja powinna dotrzeć do użytkownika na email\n"
+            "     (np. zmiana terminu, przypomnienie).\n"
+            "   Nie wysyłaj emaili bez wyraźnego powodu — nie zaśmiecaj skrzynki.\n"
+        )
 
     return SystemMessage(content=f"""\
 Jesteś asystentem rezerwacji sal konferencyjnych. Odpowiadaj po polsku.
@@ -128,10 +144,11 @@ powodu eskalacji. NIE próbuj sam rozwiązywać takich sytuacji.
 Gdy widzisz wiadomość systemową "REZERWACJA ZAPISANA" — potwierdź użytkownikowi \
 sukces i zapytaj czy potrzebuje czegoś jeszcze. NIE pytaj ponownie o rezerwację.
 Gdy widzisz "REZERWACJA ANULOWANA" — potwierdź anulowanie.
+Gdy widzisz "EMAIL WYSŁANY" — poinformuj użytkownika, że email został wysłany.
 """)
 
 
-TOOLS = [prepare_booking, check_availability, escalate_to_human, cancel_booking_tool]
+TOOLS = [prepare_booking, check_availability, escalate_to_human, cancel_booking_tool, send_email_tool]
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
@@ -212,6 +229,29 @@ async def _run_tool(
             return f"REZERWACJA ANULOWANA: rezerwacja {booking_id} ({resource_name or ''}, {cancelled['start']} – {cancelled['end']}) została pomyślnie usunięta.", None, None
 
         return "BŁĄD: Nie udało się anulować rezerwacji.", None, None
+
+    if name == "send_email":
+        to = args["to"]
+        subject = args["subject"]
+        body = args["body"]
+
+        if to == "user":
+            if user_id:
+                async with async_session_factory() as session:
+                    u_result = await session.execute(
+                        select(User).where(User.id == user_id)
+                    )
+                    u = u_result.scalar_one_or_none()
+                    to = u.email if u else None
+            else:
+                to = None
+
+        if not to:
+            return "BŁĄD: Nie można wysłać emaila — brak adresu odbiorcy (użytkownik niezalogowany lub nieprawidłowy adres).", None, None
+
+        from app.services.notifications import _send_email as _email_fn
+        await _email_fn(to, subject, body)
+        return f"EMAIL WYSŁANY do {to}.", None, None
 
     tool_fn = TOOL_DISPATCH.get(name)
     if tool_fn:

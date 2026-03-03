@@ -59,6 +59,29 @@ def cancel_booking(booking_id: int) -> str:
     return f"Cancelling booking {booking_id}"
 
 
+class SendEmailRequest(BaseModel):
+    to: str = Field(
+        description=(
+            'Recipient email address. Use the special value "user" to send '
+            "to the currently logged-in user, or provide an explicit email address."
+        )
+    )
+    subject: str = Field(description="Email subject line")
+    body: str = Field(description="Plain-text email body (use \\n for line breaks)")
+
+
+@tool(args_schema=SendEmailRequest)
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send a plain-text email to a recipient.
+
+    Use this to send booking confirmations, summaries, reminders, or any other
+    useful information. Set `to` to "user" to deliver to the currently logged-in
+    user, or supply an explicit email address.
+    Actual delivery is handled by the server — just call this tool with the content.
+    """
+    return f"Sending email to {to}"
+
+
 @tool(args_schema=AvailabilityRequest)
 def check_availability(resource_id: int, date: datetime) -> str:
     """Check existing bookings for a specific room on a given date.
