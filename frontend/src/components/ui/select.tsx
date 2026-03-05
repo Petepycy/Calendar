@@ -27,16 +27,7 @@ function Select({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  return (
-    <SelectContext.Provider value={{ value, onValueChange: onValueChange ?? (() => {}), open, setOpen }}>
-      <div className="relative">{children}</div>
-    </SelectContext.Provider>
-  );
-}
-
-function SelectTrigger({ children, className }: { children: ReactNode; className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { open, setOpen } = useSelectContext();
 
   useEffect(() => {
     if (!open) return;
@@ -47,22 +38,30 @@ function SelectTrigger({ children, className }: { children: ReactNode; className
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [open, setOpen]);
+  }, [open]);
 
   return (
-    <div ref={containerRef}>
-      <button
-        type="button"
-        className={cn(
-          "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-          className
-        )}
-        onClick={() => setOpen(!open)}
-      >
-        {children}
-        <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform", open && "rotate-180")} />
-      </button>
-    </div>
+    <SelectContext.Provider value={{ value, onValueChange: onValueChange ?? (() => {}), open, setOpen }}>
+      <div ref={containerRef} className="relative">{children}</div>
+    </SelectContext.Provider>
+  );
+}
+
+function SelectTrigger({ children, className }: { children: ReactNode; className?: string }) {
+  const { open, setOpen } = useSelectContext();
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      onClick={() => setOpen(!open)}
+    >
+      {children}
+      <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform", open && "rotate-180")} />
+    </button>
   );
 }
 
