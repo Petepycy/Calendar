@@ -187,7 +187,6 @@ async def _run_tool(
     if name == "reply_to_email":
         if not email_context:
             return "BŁĄD: Brak kontekstu emaila — to narzędzie działa tylko przy przetwarzaniu emaili.", None, None
-        from app.services.email_service import send_reply
         from app.db.models import EmailConfig
         config_id = email_context.get("config_id")
         if not config_id:
@@ -199,13 +198,25 @@ async def _run_tool(
         if not cfg:
             return "BŁĄD: Konfiguracja email nie została znaleziona.", None, None
         try:
-            await send_reply(
-                cfg,
-                to=email_context["from_address"],
-                subject=email_context.get("subject", ""),
-                body=args["body"],
-                in_reply_to=email_context.get("message_id"),
-            )
+            if cfg.email_provider == "gmail":
+                from app.services.gmail_service import send_reply_gmail
+                await send_reply_gmail(
+                    cfg,
+                    to=email_context["from_address"],
+                    subject=email_context.get("subject", ""),
+                    body=args["body"],
+                    in_reply_to=email_context.get("message_id"),
+                    thread_id=email_context.get("thread_id"),
+                )
+            else:
+                from app.services.email_service import send_reply
+                await send_reply(
+                    cfg,
+                    to=email_context["from_address"],
+                    subject=email_context.get("subject", ""),
+                    body=args["body"],
+                    in_reply_to=email_context.get("message_id"),
+                )
             return f"EMAIL REPLY SENT do {email_context['from_address']}.", None, None
         except Exception as exc:
             logger.error("Failed to send email reply", exc_info=True)

@@ -11,16 +11,16 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 const PROVIDER_PRESETS: Record<string, { imap_server: string; imap_port: number; smtp_server: string; smtp_port: number }> = {
-  gmail: { imap_server: "imap.gmail.com", imap_port: 993, smtp_server: "smtp.gmail.com", smtp_port: 587 },
   outlook: { imap_server: "outlook.office365.com", imap_port: 993, smtp_server: "smtp.office365.com", smtp_port: 587 },
 };
 
 interface EmailConfig {
   id: string;
+  email_provider: string;
   email_address: string;
-  imap_server: string;
+  imap_server: string | null;
   imap_port: number;
-  smtp_server: string;
+  smtp_server: string | null;
   smtp_port: number;
   use_ssl: boolean;
   is_active: boolean;
@@ -50,6 +50,55 @@ export default function SettingsPage() {
   const [emailSaving, setEmailSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [hasExistingConfig, setHasExistingConfig] = useState(false);
+  const [gmailConnecting, setGmailConnecting] = useState(false);
+
+  const loadEmailConfig = () => {
+    setEmailLoading(true);
+    api
+      .get<EmailConfig>("/api/email-config")
+      .then(({ data }) => {
+        setEmailConfig(data);
+        setHasExistingConfig(true);
+
+        if (data.email_provider === "gmail") {
+          setProvider("gmail");
+        } else if (data.imap_server === "outlook.office365.com") {
+          setProvider("outlook");
+        } else {
+          setProvider("custom");
+        }
+
+        setEmailForm({
+          email_address: data.email_address,
+          imap_server: data.imap_server || "",
+          imap_port: data.imap_port,
+          smtp_server: data.smtp_server || "",
+          smtp_port: data.smtp_port,
+          password: "",
+          use_ssl: data.use_ssl,
+          is_active: data.is_active,
+        });
+      })
+      .catch(() => {
+        setEmailConfig(null);
+        setHasExistingConfig(false);
+      })
+      .finally(() => setEmailLoading(false));
+  };
+
+  // Check for Gmail OAuth callback result
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gmailStatus = params.get("gmail");
+    if (gmailStatus === "connected") {
+      toast.success("Gmail connected successfully!");
+      window.history.replaceState({}, "", window.location.pathname);
+      if (isAdmin) loadEmailConfig();
+    } else if (gmailStatus === "error") {
+      toast.error("Gmail connection failed. Please try again.");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     if (user?.telegram_chat_id != null) {
@@ -60,33 +109,7 @@ export default function SettingsPage() {
   // Load existing email config on mount (admin only)
   useEffect(() => {
     if (!isAdmin) return;
-    setEmailLoading(true);
-    api
-      .get<EmailConfig>("/api/email-config")
-      .then(({ data }) => {
-        setEmailConfig(data);
-        setHasExistingConfig(true);
-        setEmailForm({
-          email_address: data.email_address,
-          imap_server: data.imap_server,
-          imap_port: data.imap_port,
-          smtp_server: data.smtp_server,
-          smtp_port: data.smtp_port,
-          password: "",
-          use_ssl: data.use_ssl,
-          is_active: data.is_active,
-        });
-        // Detect provider preset
-        if (data.imap_server === "imap.gmail.com") setProvider("gmail");
-        else if (data.imap_server === "outlook.office365.com") setProvider("outlook");
-        else setProvider("custom");
-      })
-      .catch(() => {
-        // 404 = no config yet
-        setEmailConfig(null);
-        setHasExistingConfig(false);
-      })
-      .finally(() => setEmailLoading(false));
+    loadEmailConfig();
   }, [isAdmin]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -137,7 +160,35 @@ export default function SettingsPage() {
     }
   };
 
+  const handleGmailConnect = async () => {
+    setGmailConnecting(true);
+    try {
+      const { data } = await api.get<{ auth_url: string }>("/api/email-config/gmail/auth");
+      window.location.href = data.auth_url;
+    } catch {
+      toast.error("Could not start Gmail connection");
+      setGmailConnecting(false);
+    }
+  };
+
   const handleTestConnection = async () => {
+    if (provider === "gmail") {
+      setTesting(true);
+      try {
+        const { data } = await api.post<{ ok: boolean; error: string | null }>("/api/email-config/gmail/test");
+        if (data.ok) {
+          toast.success("Gmail API connection OK!");
+        } else {
+          toast.error(data.error || "Gmail test failed");
+        }
+      } catch {
+        toast.error("Gmail config not found — connect first");
+      } finally {
+        setTesting(false);
+      }
+      return;
+    }
+
     if (!emailForm.email_address || !emailForm.password) {
       toast.error("Podaj adres email i hasło");
       return;
@@ -161,13 +212,31 @@ export default function SettingsPage() {
   };
 
   const handleEmailSave = async () => {
+    if (provider === "gmail") {
+      if (!hasExistingConfig || emailConfig?.email_provider !== "gmail") {
+        toast.error("Connect with Google first");
+        return;
+      }
+      setEmailSaving(true);
+      try {
+        const { data } = await api.patch<EmailConfig>("/api/email-config/gmail", {
+          is_active: emailForm.is_active,
+        });
+        setEmailConfig(data);
+        toast.success("Settings saved");
+      } catch {
+        toast.error("Failed to save settings");
+      } finally {
+        setEmailSaving(false);
+      }
+      return;
+    }
+
     if (!emailForm.email_address || !emailForm.password) {
       if (!hasExistingConfig) {
         toast.error("Podaj adres email i hasło");
         return;
       }
-      // Existing config: password is optional (keep old one)
-      // But our API requires it — so we must provide it
       if (!emailForm.password) {
         toast.error("Podaj hasło (wymagane przy każdym zapisie)");
         return;
@@ -220,6 +289,8 @@ export default function SettingsPage() {
     const hours = Math.floor(mins / 60);
     return `${hours} godz. temu`;
   };
+
+  const isGmailConnected = emailConfig?.email_provider === "gmail" && hasExistingConfig;
 
   return (
     <div className="space-y-6">
@@ -334,76 +405,111 @@ export default function SettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gmail">Gmail</SelectItem>
-                      <SelectItem value="outlook">Outlook / Microsoft 365</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="gmail">Gmail (OAuth)</SelectItem>
+                      <SelectItem value="outlook">Outlook / Microsoft 365 (IMAP)</SelectItem>
+                      <SelectItem value="custom">Custom (IMAP/SMTP)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
+                {/* Gmail OAuth flow */}
                 {provider === "gmail" && (
-                  <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-                    For Gmail, use an <span className="font-medium text-foreground">App Password</span> (Google Account &rarr; Security &rarr; 2-Step Verification &rarr; App Passwords).
+                  <div className="space-y-3">
+                    {isGmailConnected ? (
+                      <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        <div>
+                          <p className="font-medium">Gmail connected</p>
+                          <p>{emailConfig.email_address}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-md border bg-muted/40 p-4 text-sm space-y-3">
+                        <p className="text-muted-foreground">
+                          Connect your Gmail account via Google OAuth. No app password needed.
+                        </p>
+                        <Button onClick={handleGmailConnect} disabled={gmailConnecting}>
+                          {gmailConnecting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+                                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                              </svg>
+                              Connect with Google
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Form fields */}
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Email address</Label>
-                    <Input
-                      type="email"
-                      value={emailForm.email_address}
-                      onChange={(e) => setEmailForm((f) => ({ ...f, email_address: e.target.value }))}
-                      placeholder="inbox@yourbusiness.com"
-                    />
+                {/* IMAP/SMTP form fields — only for non-Gmail providers */}
+                {provider !== "gmail" && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label>Email address</Label>
+                      <Input
+                        type="email"
+                        value={emailForm.email_address}
+                        onChange={(e) => setEmailForm((f) => ({ ...f, email_address: e.target.value }))}
+                        placeholder="inbox@yourbusiness.com"
+                      />
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label>Password</Label>
+                      <Input
+                        type="password"
+                        value={emailForm.password}
+                        onChange={(e) => setEmailForm((f) => ({ ...f, password: e.target.value }))}
+                        placeholder={hasExistingConfig ? "••••••••" : "App password or email password"}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>IMAP server</Label>
+                      <Input
+                        value={emailForm.imap_server}
+                        onChange={(e) => setEmailForm((f) => ({ ...f, imap_server: e.target.value }))}
+                        placeholder="imap.example.com"
+                        disabled={provider !== "custom"}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>IMAP port</Label>
+                      <Input
+                        type="number"
+                        value={emailForm.imap_port}
+                        onChange={(e) => setEmailForm((f) => ({ ...f, imap_port: Number(e.target.value) }))}
+                        disabled={provider !== "custom"}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>SMTP server</Label>
+                      <Input
+                        value={emailForm.smtp_server}
+                        onChange={(e) => setEmailForm((f) => ({ ...f, smtp_server: e.target.value }))}
+                        placeholder="smtp.example.com"
+                        disabled={provider !== "custom"}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>SMTP port</Label>
+                      <Input
+                        type="number"
+                        value={emailForm.smtp_port}
+                        onChange={(e) => setEmailForm((f) => ({ ...f, smtp_port: Number(e.target.value) }))}
+                        disabled={provider !== "custom"}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Password</Label>
-                    <Input
-                      type="password"
-                      value={emailForm.password}
-                      onChange={(e) => setEmailForm((f) => ({ ...f, password: e.target.value }))}
-                      placeholder={hasExistingConfig ? "••••••••" : "App password or email password"}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>IMAP server</Label>
-                    <Input
-                      value={emailForm.imap_server}
-                      onChange={(e) => setEmailForm((f) => ({ ...f, imap_server: e.target.value }))}
-                      placeholder="imap.example.com"
-                      disabled={provider !== "custom"}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>IMAP port</Label>
-                    <Input
-                      type="number"
-                      value={emailForm.imap_port}
-                      onChange={(e) => setEmailForm((f) => ({ ...f, imap_port: Number(e.target.value) }))}
-                      disabled={provider !== "custom"}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>SMTP server</Label>
-                    <Input
-                      value={emailForm.smtp_server}
-                      onChange={(e) => setEmailForm((f) => ({ ...f, smtp_server: e.target.value }))}
-                      placeholder="smtp.example.com"
-                      disabled={provider !== "custom"}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>SMTP port</Label>
-                    <Input
-                      type="number"
-                      value={emailForm.smtp_port}
-                      onChange={(e) => setEmailForm((f) => ({ ...f, smtp_port: Number(e.target.value) }))}
-                      disabled={provider !== "custom"}
-                    />
-                  </div>
-                </div>
+                )}
 
                 {/* Enable toggle */}
                 <div className="flex items-center gap-3">
@@ -416,19 +522,23 @@ export default function SettingsPage() {
 
                 {/* Action buttons */}
                 <div className="flex gap-3">
-                  <Button variant="outline" onClick={handleTestConnection} disabled={testing}>
-                    {testing ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Testing...
-                      </>
-                    ) : (
-                      "Test Connection"
-                    )}
-                  </Button>
-                  <Button onClick={handleEmailSave} disabled={emailSaving}>
-                    {emailSaving ? "Saving..." : "Save"}
-                  </Button>
+                  {(provider !== "gmail" || isGmailConnected) && (
+                    <Button variant="outline" onClick={handleTestConnection} disabled={testing}>
+                      {testing ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Testing...
+                        </>
+                      ) : (
+                        "Test Connection"
+                      )}
+                    </Button>
+                  )}
+                  {(provider !== "gmail" || isGmailConnected) && (
+                    <Button onClick={handleEmailSave} disabled={emailSaving}>
+                      {emailSaving ? "Saving..." : "Save"}
+                    </Button>
+                  )}
                   {hasExistingConfig && (
                     <Button variant="destructive" onClick={handleEmailDelete} disabled={emailSaving}>
                       Delete
