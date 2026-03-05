@@ -19,6 +19,7 @@ from app.services.tools import (
     check_availability,
     escalate_to_human,
     prepare_booking,
+    reply_to_email as reply_to_email_tool,
     send_email as send_email_tool,
 )
 
@@ -80,6 +81,8 @@ def _system_prompt(
     knowledge_str: str = "",
     is_anonymous: bool = False,
     is_external_channel: bool = False,
+    is_email: bool = False,
+    email_context: dict | None = None,
 ) -> SystemMessage:
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
@@ -90,7 +93,19 @@ def _system_prompt(
         if knowledge_str else ""
     )
 
-    if is_anonymous:
+    if is_email and email_context:
+        booking_note = (
+            "8. Przetwarzasz przychodzący email (nie czat).\n"
+            f"   Nadawca: {email_context.get('from_address', '?')}\n"
+            f"   Temat: {email_context.get('subject', '?')}\n"
+            "   Zasady trybu email:\n"
+            "   - Użyj reply_to_email aby wysłać odpowiedź. Podaj tylko treść (body).\n"
+            "   - Jeśli możesz odpowiedzieć korzystając z bazy wiedzy lub obsłużyć rezerwację — odpowiedz.\n"
+            "   - Jeśli zapytanie jest niejasne lub wykracza poza Twoje możliwości — użyj escalate_to_human.\n"
+            "   - NIE używaj send_email — używaj reply_to_email dla odpowiedzi na emaile.\n"
+            "   - Bądź profesjonalny i zwięzły. Podpisz się jako 'Asystent CalendarAI'.\n"
+        )
+    elif is_anonymous:
         booking_note = (
             "8. Użytkownik NIE jest zalogowany. Możesz normalnie omawiać rezerwacje "
             "i ustalać szczegóły (sala, termin). Gdy użytkownik potwierdzi chęć rezerwacji "
@@ -148,7 +163,7 @@ Gdy widzisz "EMAIL WYSŁANY" — poinformuj użytkownika, że email został wys�
 """)
 
 
-TOOLS = [prepare_booking, check_availability, escalate_to_human, cancel_booking_tool, send_email_tool]
+TOOLS = [prepare_booking, check_availability, escalate_to_human, cancel_booking_tool, send_email_tool, reply_to_email_tool]
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
@@ -163,10 +178,38 @@ async def _run_tool(
     tenant_id: str = "default",
     user_id: str | None = None,
     user_role: str = "member",
+    email_context: dict | None = None,
 ) -> tuple[str, dict | None, str | None]:
     """Execute a tool call, returning (result_str, booking_draft_or_none, escalation_reason_or_none)."""
     name = tool_call["name"]
     args = tool_call["args"]
+
+    if name == "reply_to_email":
+        if not email_context:
+            return "BŁĄD: Brak kontekstu emaila — to narzędzie działa tylko przy przetwarzaniu emaili.", None, None
+        from app.services.email_service import send_reply
+        from app.db.models import EmailConfig
+        config_id = email_context.get("config_id")
+        if not config_id:
+            return "BŁĄD: Brak konfiguracji email.", None, None
+        async with async_session_factory() as session:
+            cfg = (await session.execute(
+                select(EmailConfig).where(EmailConfig.id == config_id)
+            )).scalar_one_or_none()
+        if not cfg:
+            return "BŁĄD: Konfiguracja email nie została znaleziona.", None, None
+        try:
+            await send_reply(
+                cfg,
+                to=email_context["from_address"],
+                subject=email_context.get("subject", ""),
+                body=args["body"],
+                in_reply_to=email_context.get("message_id"),
+            )
+            return f"EMAIL REPLY SENT do {email_context['from_address']}.", None, None
+        except Exception as exc:
+            logger.error("Failed to send email reply", exc_info=True)
+            return f"BŁĄD: Nie udało się wysłać odpowiedzi email: {exc}", None, None
 
     if name == "escalate_to_human":
         reason = args.get("reason", "Brak powodu")
@@ -266,6 +309,7 @@ async def _process_tool_calls(
     tenant_id: str = "default",
     user_id: str | None = None,
     user_role: str = "member",
+    email_context: dict | None = None,
 ):
     """Process tool calls and return (new_messages, booking_draft, escalation_reason)."""
     new_messages = []
@@ -273,7 +317,7 @@ async def _process_tool_calls(
     escalation_reason = None
 
     for tc in tool_calls:
-        result_str, draft, esc_reason = await _run_tool(tc, tenant_id, user_id, user_role)
+        result_str, draft, esc_reason = await _run_tool(tc, tenant_id, user_id, user_role, email_context)
         new_messages.append(ToolMessage(content=result_str, tool_call_id=tc["id"]))
         if draft is not None:
             booking_draft = draft
@@ -440,6 +484,8 @@ async def conversation_node(state: AgentState) -> dict:
     tenant_id = state.get("tenant_id", "default")
     is_anonymous = bool(state.get("is_anonymous"))
     is_external_channel = bool(contact_id and not user_id)
+    email_context = state.get("email_context")
+    is_email = bool(email_context)
 
     # --- Check for decided escalations (async notification) ---
     if (user_id or contact_id) and tenant_id != "default":
@@ -490,7 +536,7 @@ async def conversation_node(state: AgentState) -> dict:
             knowledge = await _load_knowledge(tenant_id)
             knowledge_str = _build_knowledge_section(knowledge)
             messages = [
-                _system_prompt(resource_list_str, knowledge_str, is_anonymous, is_external_channel),
+                _system_prompt(resource_list_str, knowledge_str, is_anonymous, is_external_channel, is_email, email_context),
                 SystemMessage(content=note),
             ] + [m for m in messages if not isinstance(m, SystemMessage)]
             response = await llm.ainvoke(messages)
@@ -507,7 +553,7 @@ async def conversation_node(state: AgentState) -> dict:
     has_system = any(isinstance(m, SystemMessage) for m in messages)
     if has_system:
         messages = [m for m in messages if not isinstance(m, SystemMessage)]
-    messages = [_system_prompt(resource_list_str, knowledge_str, is_anonymous, is_external_channel)] + messages
+    messages = [_system_prompt(resource_list_str, knowledge_str, is_anonymous, is_external_channel, is_email, email_context)] + messages
 
     response = await llm.ainvoke(messages)
 
@@ -516,7 +562,7 @@ async def conversation_node(state: AgentState) -> dict:
     if response.tool_calls:
         all_new = [response]
         tool_msgs, booking_draft, escalation_reason = await _process_tool_calls(
-            response.tool_calls, messages, tenant_id, user_id, user_role
+            response.tool_calls, messages, tenant_id, user_id, user_role, email_context
         )
         all_new.extend(tool_msgs)
 
@@ -551,7 +597,7 @@ async def conversation_node(state: AgentState) -> dict:
 
         if follow_up.tool_calls:
             tool_msgs2, booking_draft2, esc_reason2 = await _process_tool_calls(
-                follow_up.tool_calls, messages + all_new, tenant_id, user_id, user_role
+                follow_up.tool_calls, messages + all_new, tenant_id, user_id, user_role, email_context
             )
             all_new.extend(tool_msgs2)
 

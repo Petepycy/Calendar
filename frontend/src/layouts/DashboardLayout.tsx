@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, Bot, BookOpen, Settings, Shield, LogOut, AlertTriangle } from "lucide-react";
+import { Calendar, Bot, BookOpen, Settings, Shield, LogOut, AlertTriangle, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -38,6 +38,7 @@ export default function DashboardLayout() {
       label: "Eskalacje",
       badge: pendingCount ?? 0,
     },
+    { to: "/app/admin/email-inbox", icon: Mail, label: "Email Inbox", badge: 0 },
   ];
 
   const navItems = isAdmin ? adminItems : memberItems;

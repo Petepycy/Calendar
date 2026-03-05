@@ -19,3 +19,4 @@ class AgentState(TypedDict):
     escalation_rule_code: Optional[str]  # e.g. "too_long", "gap_too_short", "outside_hours"
     escalation_id: Optional[str]
     confirmation_context: Optional[str]  # prefixed message shown on modified-draft confirmation
+    email_context: Optional[dict]  # set when processing an incoming email: {from_address, subject, message_id, config_id}

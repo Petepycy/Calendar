@@ -15,6 +15,7 @@ import AuthCallbackPage from "@/pages/AuthCallbackPage";
 import OnboardingPage from "@/pages/OnboardingPage";
 import AdminResourcesPage from "@/pages/AdminResourcesPage";
 import AdminEscalationsPage from "@/pages/AdminEscalationsPage";
+import EmailInboxPage from "@/pages/EmailInboxPage";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +42,7 @@ export default function App() {
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="admin/resources" element={<AdminResourcesPage />} />
                 <Route path="admin/escalations" element={<AdminEscalationsPage />} />
+                <Route path="admin/email-inbox" element={<EmailInboxPage />} />
               </Route>
             </Route>
           </Routes>

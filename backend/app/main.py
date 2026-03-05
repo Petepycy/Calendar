@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -15,6 +16,7 @@ from app.api.chat import router as chat_router
 from app.api.escalations import router as escalations_router
 from app.api.knowledge import router as knowledge_router
 from app.api.resources import router as resources_router
+from app.api.email_config import router as email_config_router
 from app.api.tenants import router as tenants_router
 from app.api.webhooks import register_handlers
 from app.services._tg_ref import set_tg_client
@@ -112,9 +114,25 @@ async def lifespan(app: FastAPI):
             logger.info("Telegram not configured — bot disabled")
         app.state.tg = tg
 
+        # --- Start email poller ---
+        poller_task = None
+        if settings.encryption_key:
+            from app.services.email_poller import email_poller
+            poller_task = asyncio.create_task(email_poller(graph))
+            app.state.email_poller = poller_task
+            logger.info("Email poller started")
+        else:
+            logger.info("Email poller disabled — ENCRYPTION_KEY not set")
+
         yield
 
         # --- Shutdown ---
+        if poller_task:
+            poller_task.cancel()
+            try:
+                await poller_task
+            except asyncio.CancelledError:
+                pass
         set_tg_client(None)
         if tg:
             await tg.stop()
@@ -139,6 +157,7 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(escalations_router)
 app.include_router(knowledge_router)
 app.include_router(resources_router)
+app.include_router(email_config_router)
 app.include_router(tenants_router)
 
 

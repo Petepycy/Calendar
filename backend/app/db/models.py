@@ -137,3 +137,53 @@ class Escalation(Base):
     contact: Mapped["Contact | None"] = relationship(foreign_keys=[contact_id], lazy="selectin")
     admin: Mapped["User | None"] = relationship(foreign_keys=[admin_id], lazy="selectin")
     tenant: Mapped[Tenant] = relationship(lazy="selectin")
+
+
+class EmailConfig(Base):
+    """Per-tenant IMAP/SMTP email integration config (one per tenant)."""
+
+    __tablename__ = "email_configs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    email_address: Mapped[str] = mapped_column(String(320), nullable=False)
+    imap_server: Mapped[str] = mapped_column(String(255), nullable=False)
+    imap_port: Mapped[int] = mapped_column(Integer, nullable=False, default=993)
+    smtp_server: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_port: Mapped[int] = mapped_column(Integer, nullable=False, default=587)
+    encrypted_password: Mapped[str] = mapped_column(Text, nullable=False)
+    use_ssl: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    tenant: Mapped[Tenant] = relationship(lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_email_config_per_tenant"),
+    )
+
+
+class ProcessedEmail(Base):
+    """Audit trail of emails processed by the AI agent."""
+
+    __tablename__ = "processed_emails"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    message_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    from_address: Mapped[str] = mapped_column(String(320), nullable=False)
+    subject: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    body_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # "replied" | "escalated" | "error"
+    ai_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    tenant: Mapped[Tenant] = relationship(lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "message_id", name="uq_processed_email_per_tenant"),
+    )

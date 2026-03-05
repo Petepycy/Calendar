@@ -82,6 +82,20 @@ def send_email(to: str, subject: str, body: str) -> str:
     return f"Sending email to {to}"
 
 
+class ReplyToEmailRequest(BaseModel):
+    body: str = Field(
+        description="Plain-text reply body to send back to the email sender"
+    )
+
+
+@tool(args_schema=ReplyToEmailRequest)
+def reply_to_email(body: str) -> str:
+    """Reply to the current incoming email. The recipient, subject, and threading
+    headers are filled automatically from the email context. Just provide the reply body.
+    If you cannot handle the request, use escalate_to_human instead of replying."""
+    return f"Replying with: {body}"
+
+
 @tool(args_schema=AvailabilityRequest)
 def check_availability(resource_id: int, date: datetime) -> str:
     """Check existing bookings for a specific room on a given date.

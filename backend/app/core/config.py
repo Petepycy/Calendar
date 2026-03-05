@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
 
+    encryption_key: str = ""  # Fernet key — generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
     @property
     def psycopg_conninfo(self) -> str:
         """Convert asyncpg-style URL to psycopg conninfo for the shared pool."""
