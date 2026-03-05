@@ -14,7 +14,7 @@ from app.core.encryption import decrypt
 logger = logging.getLogger(__name__)
 
 GMAIL_SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.send",
 ]
 
