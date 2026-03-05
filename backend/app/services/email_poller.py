@@ -63,7 +63,11 @@ async def _poll_all_tenants(graph):
 
 async def _process_tenant_emails(config: EmailConfig, graph):
     """Fetch unread emails for a tenant and process each through LangGraph."""
-    emails = await fetch_unread_emails(config)
+    if config.email_provider == "gmail":
+        from app.services.gmail_service import fetch_unread_emails_gmail
+        emails = await fetch_unread_emails_gmail(config)
+    else:
+        emails = await fetch_unread_emails(config)
 
     if not emails:
         # Update last_checked_at even when no new emails
@@ -108,6 +112,7 @@ async def _process_tenant_emails(config: EmailConfig, graph):
             "subject": mail["subject"],
             "message_id": message_id,
             "config_id": str(config.id),
+            "thread_id": mail.get("thread_id"),  # Gmail thread ID for proper threading
         }
 
         input_msg = (

@@ -146,12 +146,14 @@ class EmailConfig(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    email_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="imap")  # "imap" | "gmail"
     email_address: Mapped[str] = mapped_column(String(320), nullable=False)
-    imap_server: Mapped[str] = mapped_column(String(255), nullable=False)
+    imap_server: Mapped[str | None] = mapped_column(String(255), nullable=True)
     imap_port: Mapped[int] = mapped_column(Integer, nullable=False, default=993)
-    smtp_server: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_server: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_port: Mapped[int] = mapped_column(Integer, nullable=False, default=587)
-    encrypted_password: Mapped[str] = mapped_column(Text, nullable=False)
+    encrypted_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet-encrypted
     use_ssl: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
